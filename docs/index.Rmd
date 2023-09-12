@@ -1,30 +1,94 @@
 ---
-title: "Untitled"
-author: "Cengiz Zopluoglu"
-date: "2023-09-06"
-output: html_document
+title: Fitting Zero-and-One Inflated IRT Models with Auxiliary Information via Latent Regression
+subtitle:
+author:
+  name: Cengiz Zopluoglu
+  affiliation: University of Oregon
+date: 09/11/2023
+output: 
+  html_document:
+    keep_md: false
+    theme: journal
+    highlight: haddock
+    code_folding: hide
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+always_allow_html: true
+urlcolor: blue
+mainfont: cochineal
+sansfont: Fira Sans
+monofont: Fira Code ## Although, see: https://tex.stackexchange.com/q/294362
+
+## Automatically knit to both formats:
+knit: (function(inputFile, encoding) {
+ rmarkdown::render(inputFile, encoding = encoding, 
+ output_format = 'all') 
+ })
 ---
 
+```{r klippy, echo=FALSE, include=TRUE}
+klippy::klippy(position=c('top','right'))
+```
+
+
+<style>
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {
+    z-index: 2;
+    color: #fff;
+    background-color: #33C1FF;
+    border-color: #97CAEF;
+}
+
+</style>
+
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(comment = "",fig.align='center')
+require(here)
+require(ggplot2)
+require(plot3D)
+require(kableExtra)
+require(knitr)
+require(giski)
+require(magick)
+options(scipen=99)
+
 ```
 
-## R Markdown
+`r paste('[Updated:',format(Sys.time(),'%a, %b %d, %Y - %H:%M:%S'),']')`
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+# Acknowledgement
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+This tutorial is a product of a research project funded by Duolingo, Inc. through Competitive Research Grant Program to support topics of interest related to Duolingo's English Test's ongoing research agenda.
 
-```{r cars}
-summary(cars)
-```
+# Introduction
 
-## Including Plots
+This tutorial offers a comprehensive introduction to the analysis presented in the subsequent paper by Zopluoglu and Lockwood (currently under review). Our paper discusses three model families based on the Beta, Simplex, and $S_B$ distributions. These models were initially introduced by Molenaar et al. in 2022. In our study, we enhance these models by integrating auxiliary variables, allowing us to predict the latent trait through latent regression. Additionally, we explore the application of these models in an extreme scenario where 99.5% of the observed response data matrix is intentionally missing, a result of the assessment's adaptive design.
 
-You can also embed plots, for example:
+The study's original dataset comprises 295,157 test sessions from 222,568 distinct test takers who responded to a total of 2,738 items. Each participant in the dataset answered between 4 and 7 dictation items. Notably, the vast majority (91.6%) responded to 6 items, resulting in a collective 1,789,297 responses to the 2,738 dictation items.
 
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
+The analysis of the original dataset was carried out on the Talapas server, which is The University of Oregon's high-performance computing cluster. This choice was due to the dataset's size and the complexity of the models. For demonstration purposes, we created simulated datasets on a smaller scale, enabling anyone to replicate the analysis on their personal computers. Thus, this tutorial utilizes simulated datasets that mirror the structure of the original dataset.
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Given the similarity in the code used for all three models, this tutorial only provides a demonstration for the Beta IRT model. To replicate the analysis for the Simplex and $S_B$ IRT models, you can find the code in the GitHub repository. You can access the code for the Simplex model [here](https://github.com/czopluoglu/Duolingo_paper/tree/main/script/simplex_irt) and for the $S_B$ IRT model [here](https://github.com/czopluoglu/Duolingo_paper/tree/main/script/sb_irt)
+
+
+
+# References
+
+Zopluoglu, C., Lockwood, J.R. (under review). A Comparative Study of Item Response Theory Models for Mixed Discrete-Continous Responses. *Journal of Intelligence*.
+
+Molenaar, D., Cúri, M., & Bazán, J. L. (2022). Zero and one inflated item response theory models for bounded continuous data. Journal of Educational and Behavioral Statistics, 47(6), 693-735.
+
+
+
+
+
+
+
+
+
+
+
+
+
