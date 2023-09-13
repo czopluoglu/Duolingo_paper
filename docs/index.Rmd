@@ -1,5 +1,5 @@
 ---
-title: Fitting Zero-and-One Inflated IRT Models with Auxiliary Information via Latent Regression
+title: Fitting Zero-and-One Inflated IRT Models for Bounded Continous Response Data with Auxiliary Information via Latent Regression
 subtitle:
 author:
   name: Cengiz Zopluoglu
@@ -10,7 +10,7 @@ output:
     keep_md: false
     theme: journal
     highlight: haddock
-    code_folding: hide
+    code_folding: show
     toc: yes
     toc_depth: 4
     toc_float: yes
@@ -28,7 +28,7 @@ knit: (function(inputFile, encoding) {
 ---
 
 ```{r klippy, echo=FALSE, include=TRUE}
-klippy::klippy(position=c('top','right'))
+klippy::klippy(position=c('top','right'),color='#33C1FF')
 ```
 
 
@@ -44,7 +44,7 @@ klippy::klippy(position=c('top','right'))
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(comment = "",fig.align='center')
+knitr::opts_chunk$set(comment = "",fig.align='center',message = FALSE,warning = FALSE)
 require(here)
 require(ggplot2)
 require(plot3D)
@@ -58,31 +58,751 @@ options(scipen=99)
 
 `r paste('[Updated:',format(Sys.time(),'%a, %b %d, %Y - %H:%M:%S'),']')`
 
+<font color="black">
+
 # Acknowledgement
 
 This tutorial is a product of a research project funded by Duolingo, Inc. through Competitive Research Grant Program to support topics of interest related to Duolingo's English Test's ongoing research agenda.
 
 # Introduction
 
-This tutorial offers a comprehensive introduction to the analysis presented in the subsequent paper by Zopluoglu and Lockwood (currently under review). Our paper discusses three model families based on the Beta, Simplex, and $S_B$ distributions. These models were initially introduced by Molenaar et al. in 2022. In our study, we enhance these models by integrating auxiliary variables, allowing us to predict the latent trait through latent regression. Additionally, we explore the application of these models in an extreme scenario where 99.5% of the observed response data matrix is intentionally missing, a result of the assessment's adaptive design.
+This tutorial offers a comprehensive introduction to the analysis presented in the subsequent paper by Zopluoglu and Lockwood (under review). Our paper discusses three model families based on the Beta, Simplex, and $S_B$ distributions. These models were initially introduced by Molenaar et al. in 2022. In our study, we enhance these models by integrating auxiliary variables, allowing us to predict the latent trait through latent regression. Additionally, we explore the application of these models in an extreme scenario where 99.8% of the observed response data matrix is missing, a result of the assessment's adaptive design.
 
 The study's original dataset comprises 295,157 test sessions from 222,568 distinct test takers who responded to a total of 2,738 items. Each participant in the dataset answered between 4 and 7 dictation items. Notably, the vast majority (91.6%) responded to 6 items, resulting in a collective 1,789,297 responses to the 2,738 dictation items.
 
-The analysis of the original dataset was carried out on the Talapas server, which is The University of Oregon's high-performance computing cluster. This choice was due to the dataset's size and the complexity of the models. For demonstration purposes, we created simulated datasets on a smaller scale, enabling anyone to replicate the analysis on their personal computers. Thus, this tutorial utilizes simulated datasets that mirror the structure of the original dataset.
+The analysis of the original dataset was carried out on the Talapas server, which is The University of Oregon's high-performance computing cluster. This choice was due to the dataset's size and the complexity of the models. For demonstration purposes, we created simulated datasets on a smaller scale, enabling anyone to replicate the analysis on their personal computers. Thus, this tutorial utilizes simulated datasets that mirror the structure of the original dataset. The use of the simulated data also gives us a chance to demonstrate that the Stan model syntax is properly written.
 
 Given the similarity in the code used for all three models, this tutorial only provides a demonstration for the Beta IRT model. To replicate the analysis for the Simplex and $S_B$ IRT models, you can find the code in the GitHub repository. You can access the code for the Simplex model [here](https://github.com/czopluoglu/Duolingo_paper/tree/main/script/simplex_irt) and for the $S_B$ IRT model [here](https://github.com/czopluoglu/Duolingo_paper/tree/main/script/sb_irt)
 
+# Importing the Dataset and Basic EDA
+
+We begin by importing the simulated dataset for the Beta IRT model, available in both long and wide formats. The code used to generate this dataset can be accessed [here](https://github.com/czopluoglu/Duolingo_paper/blob/main/script/beta_irt/0_simulate.r).
+
+```{r}
+
+d_wide <- read.csv(here('data/beta_wide.csv'))
+d_long <- read.csv(here('data/beta_long.csv'))
+
+head(d_long)
+```
+
+## Dataset Overview:
+
+- Test Takers: 1,000 individuals (person ids are found in column **id**).
+- Test Items: A total of 50 items (item ids are found in column **item**).
+- Responses: Each test taker answers only 10 out of the 50 items (found in column **resp**).
+- Auxiliary variables: Each test taker is assigned a writing score (found in column **w**) and a speaking score (found in column **s**).
+
+For demonstration purposes, the simulated dataset has a sparsity of 80% missing data, which is less extreme than the 99.8% missing data in the original study dataset. The true person parameters are included in the simulated dataset under the column **true_theta**. We will reference this column later to compare the true parameters with the estimated ones.
+
+Let's do a quick check on the descriptive statistics for each item.
+
+```{r}
+require(psych)
+
+desc <- describeBy(d_long$resp,d_long$item,mat=TRUE)
+desc <- desc[,c('item','n','mean','sd','min','max','skew','kurtosis')]
+desc[,3:8] <- round(desc[,3:8],2)
+rownames(desc) <- NULL
+desc
+```
+
+The following provides a quick look at the distribution of scores for a randomly selected nine items.
+
+```{r}
+require(ggplot2)
+
+set.seed(9122023)
+
+sub <- sample(1:50,9)
+sub <- d_long[d_long$item%in%sub,]
+
+labs <- setNames(paste0('Item ',unique(sub$item)),unique(sub$item))
+               
+ggplot(sub, aes(x=resp)) + 
+  geom_histogram() + 
+  geom_density(linewidth=0.1) + 
+  theme_minimal()+
+  facet_wrap(~ item,
+             labeller = as_labeller(labs))+
+   theme(strip.background = element_rect(fill = "#33C1FF"))
+
+```
+
+## Item Network Analysis
+
+Given the dataset's sparsity, it's essential to assess how items relate to one another and determine if there's a structured interconnection that allows for meaningful scaling of all items collectively. With 1,225 potential item pairs, calculated as $\frac{50*49}{2}$, the number of available responses for any given pair ranges from 21 to 55. On average, there are about 37 responses available for each item pair. This analysis suggests that no group of items exists in isolation, ensuring that all items can be meaningfully linked and scaled together.
+
+```{r}
+
+item_pairs <- as.data.frame(t(combn(1:50,2)))
+item_pairs$count <- NA
+
+for(i in 1:nrow(item_pairs)){
+  item_pairs[i,3] <- sum(!is.na(d_wide[,item_pairs[i,1]]) & 
+                           !is.na(d_wide[,item_pairs[i,2]]))
+
+}
+
+head(item_pairs)
+
+describe(item_pairs$count)
+
+```
+
+
+```{r}
+
+require(igraph)
+
+nodes <- unique(c(item_pairs[,1],item_pairs[,2]))
+
+g <- graph_from_data_frame(d = item_pairs,
+                           vertices=nodes,
+                           directed = FALSE)
+
+par(mar = c(0, 0, 0, 0))
+
+plot(g,
+     edge.arrow.size=.1,
+     vertex.label=NA,
+     vertex.size=3)
+```
+
+
+## Unidimensionality
+
+Pearson correlations are probably not the ideal choice for zero-and-one inflated bounded continuous data. It's also important to note that the item correlations are derived from a limited amount of data available for each item pair. This means they might not be estimated with high reliability. However, these correlations can still provide an initial insight into the eigenvalues and assist in generating a scree plot.
+
+It looks like we have a very large first eigenvalue, and the rest of the eigenvalues doesn't show any pattern to suggest a second or more dimensions.
+
+```{r}
+corr       <- cor(d_wide[,1:50],use='pairwise')
+diag(corr) <- smc(corr)
+eigens     <- eigen(corr)$values
+
+
+ggplot() + 
+  geom_point(aes(x=1:50,y=eigens))+
+  theme_minimal()
+```
+
+# Model Description
+
+This section provides a description of the Beta IRT model, which integrates auxiliary variables through latent regression to handle zero-and-one inflated bounded continuous response data. Descriptions for the Simplex and $S_B$ IRT models are detailed in our paper.
+
+Let $X_{pi}$ denote the continuous bounded item scores such that $X_{pi\ }\epsilon\ [0,1]$ for the $p^{th}$ person, $p\ =\ {1,\ ...,\ P}$, on the  $i^{th}$ item, $i={1,\ ...,\ I}$. We can define a discrete variable $Z_{pi}$, representing three possible conditions as the following,
+$$Z_{pi}=\left\{\begin{matrix}0,&if\ X_{pi}=0\\1,&if\ 0<X_{pi}<1\\2,&{if\ X}_{pi}=1\\\end{matrix}\right.$$
+A logistic graded response model (Samejima, 1969) can be written for modeling $Z_{pi}$ such that, 
+
+$$P\left(Z_{pi}=0\middle|\theta_p,\alpha_i,\gamma_{0i}\right)=\frac{1}{1+e^{\alpha_i\theta_p-\gamma_{0i}}}$$
+
+
+$$P\left(Z_{pi}=1\middle|\theta_p,\alpha_i,\gamma_{0i},\gamma_{1i}\right)=\frac{1}{1+e^{\alpha_i\theta_p-\gamma_{1i}}}-\frac{1}{1+e^{\alpha_i\theta_p-\gamma_{0i}}}$$
+
+$$P\left(Z_{pi}=2\middle|\theta_p,\alpha_i,\gamma_{1i}\right)=\frac{e^{\alpha_i\theta_p-\gamma_{1i}}}{1+e^{\alpha_i\theta_p-\gamma_{1i}}}$$,
+
+where $\theta_p\in\ R$ is a latent person parameter, $\alpha_i\ \in\ R^+$ is an item discrimination parameter, and $\gamma_{0i}\in\ R$ and $\gamma_{1i}\in\ R$ are category threshold parameters satisfying $\gamma_{0i}<\gamma_{1i}$.
+
+Then, the joint conditional density for the model, which is denoted by $k(.)$, can be written as the following:
+
+$$k\left(X_{pi}\middle|\theta_p,\alpha_i,\gamma_{0i}\right)=P\left(Z_{pi}=0\middle|\theta_p,\alpha_i,\gamma_{0i}\right)$$
+
+$$k\left(X_{pi}\middle|\theta_p,\alpha_i,\gamma_{0i},\gamma_{1i},\beta_i,\omega_i\right)=P\left(Z_{pi}=1\middle|\theta_p,\alpha_i,\gamma_{0i},\gamma_{1i}\right)\times\ f\left(X_{pi}\middle|\theta_p,\alpha_i,\beta_i,\omega_i\right)$$
+
+$$k\left(X_{pi}\middle|\theta_p,\alpha_i,\gamma_{1i}\right)=P\left(Z_{pi}=2\middle|\theta_p,\alpha_i,\gamma_{1i}\right),$$
+
+where $f\left(X_{pi}\middle|\theta_p,\alpha_i,\beta_i,\omega_i\right)$ corresponds to the model-specific density function with support on the open interval (0,1).
+
+$$f\left(X_{pi}\middle|\theta_p,\alpha_p,\beta_p,\omega_p\right)=\frac{\Gamma\left(a_{pi}+b_{pi}\right)}{\Gamma\left(a_{pi}\right)\Gamma\left(b_{pi}\right)}X_{pi}^{a_{pi}-1}\left(1-X_{pi}\right)^{b_{pi}-1}$$
+
+$\Gamma\left(.\right)$ is the gamma function defined by 
+
+$$\Gamma\left(d\right)=\int_{0}^{\infty}t^{d-1}e^{-t}dt$$, and
+
+$$a_{pi}=e^\frac{\alpha_i\theta_p+\beta_i+\omega_i}{2}$$
+$$b_{pi}=e^\frac{-\left(\alpha_i\theta_p+\beta_i\right)+\omega_i}{2},$$
+
+where $\beta_i\in\ R$ is an item location parameter, and $\omega_i\in\ R^+$ is an item dispersion parameter. Note that the probability distribution of $X_{pi}$ is a mixture of a discrete distribution on {0,1} and a continuous distribution on the open interval (0,1). 
+
+The model above can be extended by proposing a linear regression model of $\theta_p$ on the auxiliary variables,
+
+$$\theta_p=\xi_1W_p+\xi_2S_p+\epsilon_p,$$
+
+where $W_p$ and $S_p$ are the observed writing and speaking assessment scores for the $p^{th}$ examinee, $\xi_1$ and $\xi_2$ are the associated regression coefficients and $\epsilon_p$ is the error term. Both writing and speaking scores were standardized prior to model fitting, so they have a mean of zero and unit variance.
+
+When fitting the model, we set the prior for the error term in the regression model as
+
+$$\epsilon\sim\ N\left(0,\sigma^2\right)$$
+
+$$\sigma^2=1-\left(\xi_1^2+\xi_2^2+2\xi_1\xi_2r\right),$$
+
+where $r$ is the observed correlation between **W** and **S**, suggesting a standard normal prior for the latent trait, $\theta \sim N(0,1)$ since the **W** and **S** are both standardized prior to model fitting.
+
+# Model Estimation
+
+## Cross-validation
+
+When fitting these models, we employed a cross-validation approach. In this method, the data is randomly divided into training and test sets. The model is trained on the training set, yielding posterior distributions for both person and item parameters. These posterior distributions of model parameters are then used to generate model-based predictions for observations in the unseen test set. The model's effectiveness is evaluated based on its ability to accurately predict certain aspects of the unseen data.
+
+The inspiration for this approach is derived from a paper by Stenhaug and Domingue (2022). Implementing it in Stan is straightforward, provided the model in question possesses a built-in random number generator within Stan. This is true for the Beta and $S_B$ models. However, for the Simplex model, this has to be done externally since Stan currently lacks a built-in random number generator for the Simplex distribution. You can find the necessary R script to achieve this after fitting the model in R [here](https://github.com/czopluoglu/Duolingo_paper/blob/main/script/simplex_irt/2_assess_fit.r#L206)
+
+We create a random split of data for future use.
+
+```{r,echo=TRUE,eval=FALSE}
+
+  set.seed(692023)
+
+  # Randomly select 10% of data for test set
+
+  loc <- sample(1:nrow(d),nrow(d)*.10)
+  
+  d_test  <- d[loc,]
+  d_train <- d[-loc,]
+  
+  dim(d_train)
+  dim(d_test)
+  
+  head(d_train)
+  head(d_test)
+```
+
+## Stan Input Data
+
+The following is preparing the data input for the Stan model syntax. `Y` and `Y2` refers to responses from the training and test set, respectively. Everything else is the input data required to be used in the model syntax. 
+
+The Stan model syntax for the Beta version of the model can be found [here](https://github.com/czopluoglu/Duolingo_paper/blob/main/script/beta_irt/beta.stan).
+
+```{r,echo=TRUE,eval=FALSE}
+
+  data_rt <- list(I              = length(unique(d_train$item)),
+                  P              = length(unique(d_train$id)),
+                  n_obs          = nrow(d_train),
+                  id             = d_train$id,
+                  item           = d_train$item,
+                  W              = d_wide$w,
+                  S              = d_wide$s,
+                  r              = cor(d_wide[,'s'],d_wide[,'w']),
+                  Y              = d_train$resp,
+                  n_obs2         = nrow(d_test),
+                  Y2             = d_test$resp,
+                  item2          = d_test$item,
+                  id2            = d_test$id)
+
+```
+
+## Start Values
+
+We create the objects to provide start values for Stan. Although this is not necessary, it may help with estimation under extreme situations (like the one we had in the original dataset).
+
+```{r,echo=TRUE,eval=FALSE}
+
+  nit <- length(unique(d$item))
+  N   <- length(unique(d$id))
+
+  start <- list(ln_alpha= rnorm(nit,0,.2),
+                omega   = rnorm(nit,0,.2),
+                beta    = rnorm(nit,0,.5),
+                theta   = rnorm(N),
+                gamma0  =-abs(rnorm(nit,1,.2)),
+                gamma1  = abs(rnorm(nit,1,.2)),
+                a = 0.25,
+                b = 0.25)
+```
+
+## Compile the model
+
+We compile the model. We have to do this step only once, and it will create a `beta.exe` file in the respective folder. Unless you modify or change the model syntax file (`beta.stan`), you don't have to repeat this step. If you modify the model syntax file, then the model needs to be recompiled.
+
+```{r,echo=TRUE,eval=FALSE}
+
+require(cmdstanr)
+require(rstan)
+
+  mod  <- cmdstan_model('./script/beta_irt/beta.stan')
+
+```
+
+## Fit the model
+
+We proceeded to fit the model using four chains, each consisting of 1,000 iterations. Of these, the initial 250 draws will be discarded, leaving the subsequent 750 draws to be utilized for inference.
+
+```{r,echo=TRUE,eval=FALSE}
+
+ fit <- mod$sample(data            = data_rt,
+                    seed            = 1234,
+                    chains          = 4,
+                    parallel_chains = 4,
+                    iter_warmup     = 250,
+                    iter_sampling   = 750,
+                    refresh         = 100,
+                    init            = list(start,start,start,start))
+
+  fit$cmdstan_summary()
+  
+  stanfit <- rstan::read_stan_csv(fit$output_files())
+
+```
+
+## Save the output 
+
+For efficiency, it's advisable to save the model output as an .RData file for future processing. Without this step, you might end up re-fitting the model to restore the model output, a task that can be notably time-consuming, particularly with extensive datasets.
+
+I store these files in the "output" folder. However, due to their substantial size, this folder is not uploaded to the GitHub repository and is retained locally.
+
+```{r,echo=TRUE,eval=FALSE}
+  rm(list=ls()[!ls()%in%c("stanfit","d_wide","d","d_train","d_test")])
+  
+  save.image("./output/beta.RData")
+```
+
+# Model Evaluation
+
+```{r, eval=TRUE,echo=FALSE}
+
+require(cmdstanr)
+require(rstan)
+load(here("output/beta.RData"))
+
+```
+
+
+## Item and Person Parameter Estimates
+
+Given that we're working with a simulated dataset, our initial step is to compare the true parameters used for data generation with their estimated values. It's important to understand that these parameters might not be estimated with high precision and accuracy for two primary reasons:
+
+- Each item only has approximately 200 observations, and the model we're fitting is a complex one. Such a sample size might not be sufficiently large to reliably determine the model parameters.
+
+- The sparse person-item structure could further complicate the estimation process.
+
+The true item parameters we used to generate data can be found at the top of the file [`0_simulate.r`](https://github.com/czopluoglu/Duolingo_paper/blob/main/script/beta_irt/0_simulate.r)
+
+```{r}
+
+  ipar <- data.frame(gamma0 = rep(c(-2,-.9,-2.6,-.8,-3,-2.5,-2.9,-2.6,-1.8,2),5),
+                     gamma1 = rep(c(0.5,1.9,1.6,1,-1,-0.5,.9,.6,.8,3),5),
+                     beta   = rep(c(2.5,2.2,2.6,1.5,1.2,2.5,2.2,2.6,1.5,1.2),5),
+                     alpha  = rep(c(0.9,0.9,0.7,0.6,1.2,0.9,0.9,0.7,0.6,0.7),5),
+                     omega  = rep(c(4.3,3.6,4.1,2.6,2.7,4.3,3.6,4.1,2.6,2.7),5))
+
+  head(ipar)
+```
+
+### Item location parameters ($\beta$)
+
+The $\hat{R}$ values range between 0.999 and 1.004, suggesting satisfactory convergence. For all items, with the exception of Item 29, the 95% credible intervals includes the true parameter value. The accompanying plot indicates that the parameter estimates align closely with the true values. It's worth noting the discrete pattern observed in this plot, which arises because the true item parameter values repeat the same set of values ten times.
+
+```{r}
+
+beta <- as.data.frame(summary(stanfit, 
+                              pars = c("beta"), 
+                              probs = c(0.025, 0.975))$summary)
+beta$true_beta <- ipar$beta
+round(beta,3)
+```
+
+```{r}
+ggplot(beta, aes(x = true_beta, y = mean)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("Item Location Parameters") +
+  xlab("True Value") +
+  ylab("Posterior Mean Estimate")+
+  xlim(0.5,3)+
+  ylim(0.5,3)
+```
+
+### Item discrimination parameters ($\alpha$)
+
+The $\hat{R}$ values fall between 0.999 and 1.05, indicating satisfactory convergence. For a majority of the items, specifically 46 out of 50, the 95% credible intervals includes the true parameter value. The associated plot suggests that the parameter estimates correspond well with the true values. 
+
+```{r}
+
+alpha <- as.data.frame(summary(stanfit, 
+                               pars = c("alpha"), 
+                               probs = c(0.025, 0.975))$summary)
+
+alpha$true_alpha <- ipar$alpha
+round(alpha,3)
+```
+
+```{r}
+ggplot(alpha, aes(x = true_alpha, y = mean)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("") +
+  xlab("True Value") +
+  ylab("Posterior Mean Estimate")+
+  xlim(0,2)+
+  ylim(0,2)
+```
+
+### Category threshold parameters for 0s ($\gamma_0$)
+
+The $\hat{R}$ values fall between 0.999 and 1.001, indicating satisfactory convergence. The 95% credible intervals includes the true parameter value for 48 out of 50 items. The associated plot suggests that the parameter estimates correspond well with the true values. 
+
+```{r}
+
+gamma0 <- as.data.frame(summary(stanfit, 
+                                pars = c("gamma0"), 
+                                probs = c(0.025, 0.975))$summary)
+
+gamma0$true_gamma0 <- ipar$gamma0
+round(gamma0,3)
+
+```
+
+```{r}
+ggplot(gamma0, aes(x = true_gamma0, y = mean)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("") +
+  xlab("True Value") +
+  ylab("Posterior Mean Estimate")+
+  xlim(-4,3)+
+  ylim(-4,3)
+```
+
+
+### Category threshold parameters for 1s ($\gamma_1$)
+
+The $\hat{R}$ values fall between 0.999 and 1.002, indicating satisfactory convergence. The 95% credible intervals includes the true parameter value for 49 out of 50 items. The associated plot suggests that the parameter estimates correspond well with the true values. 
+
+```{r}
+gamma1 <- as.data.frame(summary(stanfit, 
+                                pars = c("gamma1"), 
+                                probs = c(0.025, 0.975))$summary)
+
+gamma1$true_gamma1 <- ipar$gamma1
+round(gamma1,3)
+```
+
+```{r}
+ggplot(gamma1, aes(x = true_gamma1, y = mean)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("") +
+  xlab("True Value") +
+  ylab("Posterior Mean Estimate")+
+  xlim(-1.5,3.5)+
+  ylim(-1.5,3.5)
+```
+
+
+### Dispersion Parameters ($\omega$)
+
+The $\hat{R}$ values fall between 0.999 and 1.001, indicating satisfactory convergence. The 95% credible intervals includes the true parameter value for all 50 items. The associated plot suggests that the parameter estimates correspond well with the true values.
+
+```{r}
+omega <- as.data.frame(summary(stanfit, 
+                               pars = c("omega"), 
+                               probs = c(0.025, 0.975))$summary)
+
+omega$true_omega <- ipar$omega
+
+round(omega,3)
+```
+
+```{r}
+ggplot(omega, aes(x = true_omega, y = mean)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("Scatterplot of True Values vs. Mean Estimates") +
+  xlab("True Values") +
+  ylab("Mean Estimates")+
+  xlim(1,5)+
+  ylim(1,5)
+```
+
+
+### Person location parameters ($\theta$)
+
+The $\hat{R}$ values for the person location estimates range from 0.999 to 1.005, signifying good convergence. The 95% credible intervals include the true parameter value for a substantial majority, specifically 94.3%, of the 1,000 test-takers. With a correlation of 0.93 between the true and estimated parameters, the accompanying plot indicates that the person parameters have been estimated with reasonable accuracy. A slight bias observed at the distribution's tail—overestimating at lower proficiency levels and underestimating at higher ones—is expected due to the variance shrinkage and the pull towards the mean from the imposed prior distribution.
+
+```{r}
+theta <- as.data.frame(summary(stanfit, 
+                               pars = c("theta"), 
+                               probs = c(0.025, 0.975))$summary)
+
+theta$true_theta <- d_wide$true_theta
+
+head(round(theta,3))
+```
+
+```{r}
+
+
+describe(theta[,c('mean','true_theta')])
+cor(theta$mean,theta$true_theta)
+```
+
+```{r}
+ggplot(theta, aes(x = true_theta, y = mean)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("") +
+  xlab("True Value") +
+  ylab("Posterior Mean Estimate")+
+  xlim(-5,4)+
+  ylim(-5,4)
+```
+
+### Latent regression coefficients ($\xi_1$ and $\xi_2$)
+
+The $\hat{R}$ values for both latent regression coefficients were 1.000. The coefficients were estimated at .221 and 0.474, compared to their true values of 0.3 and 0.4, respectively. The 95% credible intervals did not include the true parameter values for either coefficient, indicating a bias in the estimates. Specifically, one regression coefficient was underestimated, while the other was overestimated.
+
+```{r}
+coefs2 <- summary(stanfit, pars = c("a","b"), probs = c(0.025, 0.975))$summary
+
+round(coefs2,3)
+```
+
+## Predictive Fit
+
+From the generated responses based on the posterior distribution of the model parameters, we computed the posterior distribution for the sum of squared error (SSE) in predictions pertaining to the test data. The posterior mean estimate for the SSE in the unseen test data stood at 187.46.
+
+```{r}
+posteriors <- extract(stanfit)
+
+Yhat_test  <- posteriors$Yhat_test
+
+SSE_test <- rep(0,3000)
+
+for(i in 1:3000){
+  tmp          <- Yhat_test[i,]
+  SSE_test[i]  <- sum((d_test$resp - tmp)^2)
+}
+
+ggplot() + 
+  geom_histogram(aes(x=SSE_test),fill='white',color='black')+
+  theme_minimal()
+
+mean(SSE_test)
+```
+
+While the aforementioned number provides insight, it lacks context without a baseline for comparison. To establish this baseline SSE, we employed a method where, for each observed response, we randomly sampled a prediction from the respective item-specific observed distribution. This process was repeated 3,000 times. 
+
+```{r,eval=FALSE,echo=TRUE}
+
+SSE_test_baseline <- matrix(nrow=3000,ncol=1000)
+
+for(i in 1:3000){
+  for(j in 1:50){
+    ind  <- d_test[j,]$item
+    loc  <- which(d_test$item==j)
+    sub  <- d_train[d_train$item==ind,]$resp
+    SSE_test_baseline[i,loc] = sample(sub,length(loc),replace=TRUE)
+  }
+}
+```
+
+```{r,eval=TRUE,echo=FALSE}
+SSE_test_baseline <- as.matrix(read.csv(here('output/baseline.csv')))
+```
+
+
+Then, we calculated the distribution of SSE and average baseline SSE.
+
+```{r}
+SSE_baseline <- rep(0,3000)
+
+for(i in 1:3000){
+  tmp             <-  SSE_test_baseline[i,]
+  SSE_baseline[i] <- sum((d_test$resp - tmp)^2)
+}
+
+ggplot() + 
+  geom_histogram(aes(x=SSE_baseline),fill='white',color='black')+
+  theme_minimal()
+
+mean(SSE_baseline)
+```
+
+The SSE dropped from 302.45 to 187.46 when the model is used to predict the responses in the unseen test data. The proportional reduction in SSE can be interpreted as the variance explained by the model, $$\frac{302.45-187.46}{302.45} = 0.38.$$
+
+We also used this approach in the paper to compare different models in terms of predictive utility for unseen data.
+
+## Posterior Predictive Checks
+
+We evaluate certain aspects of the model fit by using the posterior predictive model-checking approach (PPMC). Essentially, PPMC contrasts actual data with model-predicted or generated data. If there's a noticeable divergence between the real data and the model's predictions, it suggests the model isn't adequately capturing certain data facets. Visual representations are often the most user-friendly means to conduct these posterior predictive assessments. So, we created several visualizations to check the alignment between real data and model predictions. We primarily focused on three aspects:
+
+- Recovery of average item response
+
+- Recovery of standard deviaion of item responses
+
+- Recovery of the total test score distribution
+
+- Recovery of item specific distributions
+
+### The average item response
+
+```{r}
+
+obs_  <- c()   # The observed average item score in the test data
+pred_ <- c()   # The posterior mean of average item scores in the test data
+
+for(item in 1:50){ # iterate over items
+  
+  loc1        <- which(d_test$item==item)
+  obs         <- d_test$resp[loc1]
+  obs_[item]  <- mean(obs)
+  
+  pred        <- c()
+  
+  for(j in 1:3000){
+    pred[j]   <- mean(Yhat_test[j,loc1])
+  }
+  
+  pred_[item] <- mean(pred)
+  
+}
+
+
+ggplot() +
+  geom_point(aes(y = obs_, x = pred_)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("") +
+  ylab("Observed Average Item Score") +
+  xlab("Posterior Mean of Model Predicted Average Item Score")+
+  xlim(0,1)+
+  ylim(0,1)
+
+```
+
+### The standard deviation of item responses
+
+```{r}
+obs_  <- c()   # The observed standard deviation in the test data
+pred_ <- c()   # The posterior mean of standard deviation in the test data
+
+for(item in 1:50){
+  
+  loc1        <- which(d_test$item==item)
+  obs         <- d_test$resp[loc1]
+  obs_[item]  <- sd(obs)
+  
+  pred        <- c()
+  
+  for(j in 1:3000){
+    pred[j]   <- sd(Yhat_test[j,loc1])
+  }
+  
+  pred_[item] <- mean(pred)
+  
+}
+
+
+ggplot() +
+  geom_point(aes(y = obs_, x = pred_)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("") +
+  ylab("Observed Standard Deviation of Item Scores") +
+  xlab("Posterior Mean of Model Predicted Standard Deviation of Item Scores")+
+  xlim(0,1)+
+  ylim(0,1)
+```
+
+### The total score distribution
+
+For this one, we use the training data because test data has only one or two items per test taker, so it doesn't make sense to create a total score.
+
+```{r}
+
+Yhat_train <- posteriors$Yhat_train
+
+d_train_wide <- reshape(data = d_train,
+                        idvar = c('id','w','s','true_theta'),
+                        timevar = 'item',
+                        direction= 'wide')
+
+obs_score          <- rowMeans(d_train_wide[,5:54],na.rm=TRUE)
+
+score_posterior    <- c()
+
+for(p in 1:1000){
+  
+  loc1  <- which(d_train$id==d_train_wide$id[p])
+  
+  tmp <- c()
+  
+  for(j in 1:3000){
+    tmp[j] <- mean(Yhat_train[j,loc1])
+  }
+  
+  score_posterior[p] <- mean(tmp)
+}
+
+ggplot() +
+  geom_point(aes(y = obs_score, x = score_posterior)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  theme_minimal() +
+  ggtitle("") +
+  ylab("Observed Average Person Score") +
+  xlab("Posterior Mean of Model Predicted Average Person Score")+
+  xlim(0,1)+
+  ylim(0,1)
+```
+
+```{r}
+
+score <- data.frame(type=c(rep('Observed',1000),rep('Posterior',1000)),
+                    score = c(obs_score,score_posterior))
+
+ggplot(score, aes(x=score, linetype=type)) + 
+  geom_histogram(data=subset(score, type=="Observed"), 
+                 aes(y=after_stat(density)),fill='white',color='black') + 
+  geom_density(linewidth=0.1) + 
+  theme_minimal() +
+  labs(title="", 
+       x="Total Score", y="Density") +  
+  theme(legend.title = element_blank(),
+        legend.key = element_blank())
+```
+
+### The item specific distribution
+
+We again use the training data for checking this because test data has only few observations per item to get any meaningful distribution. The code below generates the observed distribution and model predicted distribution given an item number.
+
+```{r}
+
+item <- 3
+
+loc1        <- which(d_train$item==item)
+obs         <- d_train$resp[loc1]
+pred        <- colMeans(Yhat_train[,loc1])
+
+
+score <- data.frame(type=c(rep('Observed',length(loc1)),
+                           rep('Posterior',length(loc1))),
+                    score = c(obs,pred))
+
+ggplot(score, aes(x=score, linetype=type)) + 
+  geom_histogram(data=subset(score, type=="Observed"), 
+                 aes(y=after_stat(density)),fill='white',color='black') + 
+  geom_density(linewidth=0.1) + 
+  theme_minimal() +
+  labs(title="", 
+       x="Total Score", y="Density") +  
+  theme(legend.title = element_blank(),
+        legend.key = element_blank())  
+```
 
 
 # References
 
-Zopluoglu, C., Lockwood, J.R. (under review). A Comparative Study of Item Response Theory Models for Mixed Discrete-Continous Responses. *Journal of Intelligence*.
+  - Molenaar, D., Cúri, M., & Bazán, J. L. (2022). Zero and one inflated item response theory models for bounded continuous data. Journal of Educational and Behavioral Statistics, 47(6), 693-735.
 
-Molenaar, D., Cúri, M., & Bazán, J. L. (2022). Zero and one inflated item response theory models for bounded continuous data. Journal of Educational and Behavioral Statistics, 47(6), 693-735.
+  - Stenhaug, B. A., & Domingue, B. W. (2022). Predictive fit metrics for item response models. Applied Psychological Measurement, 46(2), 136-155.
 
-
-
-
+  - Zopluoglu, C., Lockwood, J.R. (under review). A Comparative Study of Item Response Theory Models for Mixed Discrete-Continous Responses. *Journal of Intelligence*.
 
 
 
@@ -90,5 +810,8 @@ Molenaar, D., Cúri, M., & Bazán, J. L. (2022). Zero and one inflated item resp
 
 
 
+
+
+</font>
 
 

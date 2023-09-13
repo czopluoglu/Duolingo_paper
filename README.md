@@ -1,9 +1,16 @@
+**Acknowledgement**
+
+The content of this GitHub repo is a product of a research project funded by Duolingo, Inc. through Competitive Research Grant Program to support topics of interest related to Duolingo's English Test's ongoing research agenda.
+
 **Repository Overview**
+
 This repository contains the code and resources associated with the following paper:
 
     Zopluoglu, C., Lockwood, J.R. (under review). A Comparative Study of Item Response Theory Models for Mixed Discrete-Continuous Responses. Journal of Intelligence.
 
-For a tutorial-style introduction to the analyses conducted in the paper, please visit: https://czopluoglu.github.io/Duolingo_paper/
+For a tutorial-style introduction to the analyses conducted in the paper, please visit:
+
+https://czopluoglu.github.io/Duolingo_paper/
 
 **Directory Structure and Contents**
 
