@@ -653,14 +653,7 @@ for(item in 1:50){ # iterate over items
   obs         <- d_test$resp[loc1]
   obs_[item]  <- mean(obs)
   
-  pred        <- c()
-  
-  for(j in 1:3000){
-    pred[j]   <- mean(Yhat_test[j,loc1])
-  }
-  
-  pred_[item] <- mean(pred)
-  
+  pred_[item] <- mean(rowMeans(Yhat_test[,loc1]))
 }
 
 
@@ -669,8 +662,8 @@ ggplot() +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
   theme_minimal() +
   ggtitle("") +
-  ylab("Observed Average Item Score") +
-  xlab("Posterior Mean of Model Predicted Average Item Score")+
+  ylab("Average Item Score for Observed Responses") +
+  xlab("Posterior Mean of Average Item Score for Model Generated Responses")+
   xlim(0,1)+
   ylim(0,1)
 
@@ -688,13 +681,18 @@ for(item in 1:50){
   obs         <- d_test$resp[loc1]
   obs_[item]  <- sd(obs)
   
-  pred        <- c()
+  Yhat_test[,loc1]
+    
+  # Var[E(Y|params)], variance of expected grade conditional on model parameters
   
-  for(j in 1:3000){
-    pred[j]   <- sd(Yhat_test[j,loc1])
-  }
+  comp1 <- var(colMeans(Yhat_test[,loc1]))     
+      
+  # E[Var(Y|params)], expected value of variance of grades conditional on model parameters
   
-  pred_[item] <- mean(pred)
+  comp2 <- mean(apply(Yhat_test[,loc1],1,var)) 
+
+  
+  pred_[item] <- sqrt(comp1 + comp2)
   
 }
 
@@ -704,8 +702,8 @@ ggplot() +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
   theme_minimal() +
   ggtitle("") +
-  ylab("Observed Standard Deviation of Item Scores") +
-  xlab("Posterior Mean of Model Predicted Standard Deviation of Item Scores")+
+  ylab("Standard Deviation of Observed Responses") +
+  xlab("Standard Deviation of Model Generated Responses")+
   xlim(0,1)+
   ylim(0,1)
 ```
@@ -731,13 +729,9 @@ for(p in 1:1000){
   
   loc1  <- which(d_train$id==d_train_wide$id[p])
   
-  tmp <- c()
+  tmp <- rowMeans(Yhat_train[,loc1])
   
-  for(j in 1:3000){
-    tmp[j] <- mean(Yhat_train[j,loc1])
-  }
-  
-  score_posterior[p] <- mean(tmp)
+  score_posterior[p] <- sample(tmp,1)
 }
 
 ggplot() +
@@ -769,31 +763,64 @@ ggplot(score, aes(x=score, linetype=type)) +
 
 ### The item specific distribution
 
-We again use the training data for checking this because test data has only few observations per item to get any meaningful distribution. The code below generates the observed distribution and model predicted distribution given an item number.
+We again use the training data for checking this because test data has only few observations per item to get any meaningful distribution. The code below generates a function to compare the item specific distributions for the observed data and model generated data.
 
 ```{r}
 
-item <- 3
+compare_item_dist <- function(item){
 
-loc1        <- which(d_train$item==item)
-obs         <- d_train$resp[loc1]
-pred        <- colMeans(Yhat_train[,loc1])
+  loc1        <- which(d_train$item==item)
+  obs         <- d_train$resp[loc1]
+  pred        <- c()
+  
+  for(i in 1:length(loc1)){
+    pred[i]   <- sample(Yhat_train[,loc1[i]],1)
+  }
+  
+  score <- data.frame(type=c(rep('Observed',length(loc1)),
+                             rep('Posterior',length(loc1))),
+                      score = c(obs,pred))
 
-
-score <- data.frame(type=c(rep('Observed',length(loc1)),
-                           rep('Posterior',length(loc1))),
-                    score = c(obs,pred))
-
-ggplot(score, aes(x=score, linetype=type)) + 
-  geom_histogram(data=subset(score, type=="Observed"), 
-                 aes(y=after_stat(density)),fill='white',color='black') + 
-  geom_density(linewidth=0.1) + 
-  theme_minimal() +
-  labs(title="", 
-       x="Total Score", y="Density") +  
-  theme(legend.title = element_blank(),
-        legend.key = element_blank())  
+  p <- ggplot(score, aes(x=score, linetype=type)) + 
+    geom_histogram(data=subset(score, type=="Observed"), 
+                   aes(y=after_stat(density)),fill='white',color='black') + 
+    geom_density(linewidth=0.1) + 
+    theme_minimal() +
+    labs(title="", 
+         x="Total Score", y="Density") +  
+    theme(legend.title = element_blank(),
+          legend.key = element_blank()) +
+    ggtitle(paste0('Item ',item))
+  
+  print(p)
+}
 ```
+
+
+```{r}
+
+compare_item_dist(item=1)
+
+```
+
+```{r}
+
+compare_item_dist(item=2)
+
+```
+
+```{r}
+
+compare_item_dist(item=3)
+
+```
+
+```{r}
+
+compare_item_dist(item=4)
+
+```
+
 
 
 # References
