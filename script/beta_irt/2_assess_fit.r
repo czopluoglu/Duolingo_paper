@@ -257,20 +257,13 @@ mean(SSE_test)
 obs_  <- c()   # The observed average item score in the test data
 pred_ <- c()   # The posterior mean of average item scores in the test data
 
-for(item in 1:50){
+for(item in 1:50){ # iterate over items
   
-  loc1  <- which(d_test$item==item)
-  obs   <- d_test$resp[loc1]
-  obs_[item] <- mean(obs)
+  loc1        <- which(d_test$item==item)
+  obs         <- d_test$resp[loc1]
+  obs_[item]  <- mean(obs)
   
-  pred <- c()
-  
-  for(j in 1:3000){
-    pred[j] <- mean(Yhat_test[j,loc1])
-  }
-  
-  pred_[item] <- mean(pred)
-  
+  pred_[item] <- mean(rowMeans(Yhat_test[,loc1]))
 }
 
 
@@ -291,17 +284,22 @@ pred_ <- c()   # The posterior mean of standard deviation in the test data
 
 for(item in 1:50){
   
-  loc1  <- which(d_test$item==item)
-  obs   <- d_test$resp[loc1]
-  obs_[item] <- sd(obs)
+  loc1        <- which(d_test$item==item)
+  obs         <- d_test$resp[loc1]
+  obs_[item]  <- sd(obs)
   
-  pred <- c()
+  Yhat_test[,loc1]
   
-  for(j in 1:3000){
-    pred[j] <- sd(Yhat_test[j,loc1])
-  }
+  # Var[E(Y|params)], variance of expected grade conditional on model parameters
   
-  pred_[item] <- mean(pred)
+  comp1 <- var(colMeans(Yhat_test[,loc1]))     
+  
+  # E[Var(Y|params)], expected value of variance of grades conditional on model parameters
+  
+  comp2 <- mean(apply(Yhat_test[,loc1],1,var)) 
+  
+  
+  pred_[item] <- sqrt(comp1 + comp2)
   
 }
 
@@ -332,14 +330,9 @@ for(p in 1:1000){
   
   loc1  <- which(d_train$id==d_train_wide$id[p])
   
-  tmp <- c()
+  tmp <- rowMeans(Yhat_train[,loc1])
   
-  for(j in 1:3000){
-    tmp[j] <- mean(Yhat_train[j,loc1])
-  }
-  
-  score_posterior[p] <- mean(tmp)
-  setTxtProgressBar(pb, p)
+  score_posterior[p] <- sample(tmp,1)
 }
 
 cor(obs_score,score_posterior)
