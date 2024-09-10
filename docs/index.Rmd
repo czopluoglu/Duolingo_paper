@@ -64,9 +64,13 @@ options(scipen=99)
 
 This tutorial is a product of a research project funded by Duolingo, Inc. through Competitive Research Grant Program to support topics of interest related to Duolingo's English Test's ongoing research agenda.
 
+For the full paper we recently published:
+
+Zopluoglu, C., & Lockwood, J. R. (2024). A Comparative Study of Item Response Theory Models for Mixed Discrete-Continuous Responses. Journal of Intelligence, 12(3), 26. https://doi.org/10.3390/jintelligence12030026
+
 # Introduction
 
-This tutorial offers a comprehensive introduction to the analysis presented in the subsequent paper by Zopluoglu and Lockwood (under review). Our paper discusses three model families based on the Beta, Simplex, and $S_B$ distributions. These models were initially introduced by Molenaar et al. in 2022. In our study, we enhance these models by integrating auxiliary variables, allowing us to predict the latent trait through latent regression. Additionally, we explore the application of these models in an extreme scenario where 99.8% of the observed response data matrix is missing, a result of the assessment's adaptive design.
+This tutorial offers a comprehensive introduction to the analysis presented in the subsequent paper by Zopluoglu and Lockwood (2024). Our paper discusses three model families based on the Beta, Simplex, and $S_B$ distributions. These models were initially introduced by [Molenaar et al. in 2022](https://doi.org/10.3102/10769986221108455). In our study, we enhance these models by integrating auxiliary variables, allowing us to predict the latent trait through latent regression. Additionally, we explore the application of these models in an extreme scenario where 99.8% of the observed response data matrix is missing, a result of the assessment's adaptive design.
 
 The study's original dataset comprises 295,157 test sessions from 222,568 distinct test takers who responded to a total of 2,738 items. Each participant in the dataset answered between 4 and 7 dictation items. Notably, the vast majority (91.6%) responded to 6 items, resulting in a collective 1,789,297 responses to the 2,738 dictation items.
 

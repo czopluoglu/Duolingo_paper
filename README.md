@@ -6,7 +6,7 @@ The content of this GitHub repo is a product of a research project funded by Duo
 
 This repository contains the code and resources associated with the following paper:
 
-    Zopluoglu, C., Lockwood, J.R. (under review). A Comparative Study of Item Response Theory Models for Mixed Discrete-Continuous Responses. Journal of Intelligence.
+    Zopluoglu, C., & Lockwood, J. R. (2024). A Comparative Study of Item Response Theory Models for Mixed Discrete-Continuous Responses. Journal of Intelligence, 12(3), 26. https://doi.org/10.3390/jintelligence12030026
 
 For a tutorial-style introduction to the analyses conducted in the paper, please visit:
 
